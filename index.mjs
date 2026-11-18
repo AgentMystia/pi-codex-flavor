@@ -59,6 +59,9 @@ export default async function codexFlavor(pi) {
       onChange: () => { if (context && runtime) refreshStatus(context, runtime); },
     });
     runtime.parentMessage = (owner, message) => pi.sendMessage({ customType: 'pi-codex-agent-message', content: `[${owner}] ${message}`, display: true }, { triggerTurn: true, deliverAs: 'steer' });
+    // Codex injects a finished child's notification without starting a turn. Steering reaches the
+    // next request of a running loop; an idle session only appends it, since triggerTurn is unset.
+    runtime.agentNotice = text => pi.sendMessage({ customType: 'pi-codex-agent-notification', content: text, display: true }, { deliverAs: 'steer' });
     definitions = new Map(runtime.tools('root', () => context).map(tool => [tool.name, tool]));
     installUI(ctx, runtime);
     // Like Codex's retained <collaboration_mode> developer fragment, re-inject the

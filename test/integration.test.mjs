@@ -227,6 +227,37 @@ test('actual /subagent command configures layers without model requests; the ses
   assert.ok(notifications.some(item => item.kind === 'error' && /Unknown model/.test(item.message)), 'unknown models are rejected with a notification');
   assert.equal(f.requests.length, 0);
 });
+test('the main session reads a finished child notification at its next request without an extra turn', async t => {
+  let stage = 0;
+  const f = await sessionFixture(t, async context => {
+    const system = getSystemMessageText(context.messages.find(message => message.role === 'system') ?? { content: context.systemPrompt ?? '' });
+    if (/Delegated role/.test(system)) { await pause(200); return 'child findings ready'; }
+    stage++;
+    if (stage === 1) return callTool('spawn_agent', { message: 'investigate' });
+    if (stage === 2) return callTool('exec_command', { cmd: 'sleep 1', yield_time_ms: 5000 });
+    return 'integrated';
+  });
+  await f.session.prompt('Delegate and continue');
+  const rootRequests = f.requests.filter(request => !/Delegated role/.test(getSystemMessageText(request.messages.find(message => message.role === 'system') ?? { content: '' })));
+  assert.equal(rootRequests.length, 3, 'the notification adds no model request of its own');
+  const conversation = request => JSON.stringify(request.messages.filter(message => message.role !== 'system'));
+  assert.match(conversation(rootRequests[2]), /subagent_notification[^]*child findings ready/);
+  assert.doesNotMatch(conversation(rootRequests[1]), /subagent_notification/);
+});
+test('a child finishing after the main session went idle is recorded without starting a turn', async t => {
+  let stage = 0;
+  const f = await sessionFixture(t, async context => {
+    const system = getSystemMessageText(context.messages.find(message => message.role === 'system') ?? { content: '' });
+    if (/Delegated role/.test(system)) { await pause(300); return 'late findings'; }
+    return ++stage === 1 ? callTool('spawn_agent', { message: 'investigate' }) : 'handed off';
+  });
+  await f.session.prompt('Delegate and stop');
+  const count = f.requests.length;
+  await pause(800);
+  assert.equal(f.requests.length, count, 'no model request follows the notification');
+  const notice = f.sessionManager.getBranch().find(entry => entry.customType === 'pi-codex-agent-notification');
+  assert.match(notice?.content ?? '', /late findings/);
+});
 test('fork excludes unfinished local tool batches and retains completed native history', () => {
   const native = { role: 'assistant', content: [{ type: 'text', text: 'native' }], opaqueNative: { opaque: true } };
   const messages = [native, { role: 'assistant', content: [{ type: 'toolCall', id: 'pending', name: 'spawn_agent' }] }];
