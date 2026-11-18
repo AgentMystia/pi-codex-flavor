@@ -10,6 +10,7 @@ import { Policy } from './policy.mjs';
 import { Executor, MAX_POLL_MS } from './executor.mjs';
 import { execResult, truncateMiddle, clip } from './exec-output.mjs';
 import { Files } from './files.mjs';
+import { shellPatch } from './patch.mjs';
 import { Threads } from './threads.mjs';
 import { Lsp } from './lsp.mjs';
 import { Approvals } from './approvals.mjs';
@@ -223,7 +224,11 @@ export class Runtime {
         (value, p) => Object.keys(p).length ? compact(value, `${value.id} ${value.status ?? 'pending'}`)
           : compact(value, Object.values(value).map(task => `${task.id} ${task.status ?? 'pending'} ${task.title ?? ''}${task.note ? ` (${task.note})` : ''}`).join('\n') || 'No tasks')),
       make('exec_command', 'Execute through the user-selected permission policy. Host access under restricted presets requires require_escalated with a justification and separate approval; Read-Only forbids escalation. Waits up to yield_time_ms (default 10000) for the command to finish; a longer command keeps running and returns a session ID for write_stdin. Native PTY is not enabled.', { cmd: S(), workdir: optional(S()), yield_time_ms: optional(number()), timeout_ms: optional(number(86400000)), max_output_tokens: optional(number(1000000)), require_approval: optional(Type.Boolean()), sandbox_permissions: optional(Type.Union(['use_default', 'require_escalated'].map(Type.Literal))), justification: optional(S()) },
-        (p, signal, update) => this.executor.exec({ ...p, yield_time_ms: clamp(p.yield_time_ms ?? 10000, 250, 30000) }, owner, signal, update), (value, p) => execResult(value, this.config.outputBytes, p.max_output_tokens)),
+        async (p, signal, update) => {
+          const patch = shellPatch(p.cmd);
+          if (patch) return { patched: await this.files.apply(patch.patch, owner, signal, path.join(p.workdir ?? '', patch.dir ?? '')) };
+          return this.executor.exec({ ...p, yield_time_ms: clamp(p.yield_time_ms ?? 10000, 250, 30000) }, owner, signal, update);
+        }, (value, p) => value.patched ? patchResult(value.patched) : execResult(value, this.config.outputBytes, p.max_output_tokens)),
       make('write_stdin', 'Write stdin, send EOF or cancel a process owned by this agent, then return its new output. Input waits up to 30 s (default 250 ms). With nothing to send it waits 5 s to 300 s (default 5 s) unless the process ends or the user sends a message first; for a long job, wait long once instead of polling often.', { session_id: Type.Integer({ minimum: 1000, maximum: 99999 }), chars: optional(S()), yield_time_ms: optional(number(MAX_POLL_MS)), max_output_tokens: optional(number(1000000)), eof: optional(Type.Boolean()), cancel: optional(Type.Boolean()) }, (p, _signal, _update, ctx) => {
         const empty = !(p.chars || p.eof || p.cancel);
         return this.executor.write({ ...p, yield_time_ms: empty ? clamp(p.yield_time_ms ?? 5000, 5000, MAX_POLL_MS) : clamp(p.yield_time_ms ?? 250, 250, 30000) }, owner, empty ? this.hasInput(owner, ctx) : undefined);

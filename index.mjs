@@ -2,7 +2,7 @@ import { Runtime } from './src/runtime.mjs';
 import { loadConfig } from './src/config.mjs';
 import { applyPromptSections, modeInstructions } from './src/prompt.mjs';
 import { installUI, refreshStatus, selectPermission, selectPlanImplementation, renderToolCall, renderToolResult, showText, configureSubagents } from './src/ui.mjs';
-import { execResult, truncateText, byteLength } from './src/exec-output.mjs';
+import { truncateText, byteLength } from './src/exec-output.mjs';
 import { PERMISSION_PRESETS, permissionPreset } from './src/permissions.mjs';
 import { PLAN_IMPLEMENTATION_CODING_MESSAGE, extractProposedPlan, planUsageLabel } from './src/plan.mjs';
 import { THINKING_LEVELS, clearSubagentConfig, subagentsPath, supportedThinkingLevels, writeSubagentConfig } from './src/subagents.mjs';
@@ -41,9 +41,9 @@ export default async function codexFlavor(pi) {
     name: 'bash', label: 'bash (controlled)', description: 'Compatibility command tool through Codex execution policy. Prefer exec_command and write_stdin.',
     parameters: { type: 'object', properties: { command: { type: 'string' }, timeout: { type: 'number' } }, required: ['command'] },
     renderCall: (args, theme) => renderToolCall(args, theme, 'bash'), renderResult: renderToolResult,
-    execute: async (_id, params, signal, update) => {
-      const output = await requireRuntime().executor.exec({ cmd: params.command, timeout_ms: params.timeout ? params.timeout * 1000 : undefined, yield_time_ms: 30000 }, 'root', signal, update);
-      return execResult(output, config.outputBytes);
+    execute: (id, params, signal, update, ctx) => {
+      requireRuntime();
+      return definitions.get('exec_command').execute(id, { cmd: params.command, timeout_ms: params.timeout ? params.timeout * 1000 : undefined, yield_time_ms: 30000 }, signal, update, ctx);
     },
   });
   names.add('bash');
