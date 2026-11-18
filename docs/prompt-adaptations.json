@@ -141,6 +141,11 @@
       "reason": "This flavor targets the owner's Arch Linux host only; PowerShell is never available, so the compatibility shim tool declaration was removed (exec_command remains the command channel; the ported Codex banned-prefix safety list in approvals.mjs is unchanged).",
       "removed": "powershell compatibility tool registration in index.mjs",
       "added": ""
+    },
+    {
+      "reason": "Codex delivers a finished child's final message to its parent without a turn (control.rs SubagentNotification / InterAgentCompletionMessage). The suite now does the same, so the parent learns this instead of polling.",
+      "removed": "",
+      "added": "A descendant that finishes while you are not waiting on it reports back in a `<subagent_notification>`; keep doing independent work instead of polling."
     }
   ],
   "appendix": "Pi tool and session adaptation: behavioral contracts and runtime boundaries; parameter details live in the tool schemas.",

@@ -2,7 +2,7 @@ import { Runtime } from './src/runtime.mjs';
 import { loadConfig } from './src/config.mjs';
 import { applyPromptSections, modeInstructions } from './src/prompt.mjs';
 import { installUI, refreshStatus, selectPermission, selectPlanImplementation, renderToolCall, renderToolResult, showText, configureSubagents } from './src/ui.mjs';
-import { execResult, truncateText, byteLength } from './src/exec-output.mjs';
+import { truncateText, byteLength } from './src/exec-output.mjs';
 import { PERMISSION_PRESETS, permissionPreset } from './src/permissions.mjs';
 import { PLAN_IMPLEMENTATION_CODING_MESSAGE, extractProposedPlan, planUsageLabel } from './src/plan.mjs';
 import { THINKING_LEVELS, clearSubagentConfig, subagentsPath, supportedThinkingLevels, writeSubagentConfig } from './src/subagents.mjs';
@@ -41,9 +41,9 @@ export default async function codexFlavor(pi) {
     name: 'bash', label: 'bash (controlled)', description: 'Compatibility command tool through Codex execution policy. Prefer exec_command and write_stdin.',
     parameters: { type: 'object', properties: { command: { type: 'string' }, timeout: { type: 'number' } }, required: ['command'] },
     renderCall: (args, theme) => renderToolCall(args, theme, 'bash'), renderResult: renderToolResult,
-    execute: async (_id, params, signal, update) => {
-      const output = await requireRuntime().executor.exec({ cmd: params.command, timeout_ms: params.timeout ? params.timeout * 1000 : undefined, yield_time_ms: 30000 }, 'root', signal, update);
-      return execResult(output, config.outputBytes);
+    execute: (id, params, signal, update, ctx) => {
+      requireRuntime();
+      return definitions.get('exec_command').execute(id, { cmd: params.command, timeout_ms: params.timeout ? params.timeout * 1000 : undefined, yield_time_ms: 30000 }, signal, update, ctx);
     },
   });
   names.add('bash');
@@ -59,6 +59,9 @@ export default async function codexFlavor(pi) {
       onChange: () => { if (context && runtime) refreshStatus(context, runtime); },
     });
     runtime.parentMessage = (owner, message) => pi.sendMessage({ customType: 'pi-codex-agent-message', content: `[${owner}] ${message}`, display: true }, { triggerTurn: true, deliverAs: 'steer' });
+    // Codex injects a finished child's notification without starting a turn. Steering reaches the
+    // next request of a running loop; an idle session only appends it, since triggerTurn is unset.
+    runtime.agentNotice = text => pi.sendMessage({ customType: 'pi-codex-agent-notification', content: text, display: true }, { deliverAs: 'steer' });
     definitions = new Map(runtime.tools('root', () => context).map(tool => [tool.name, tool]));
     installUI(ctx, runtime);
     // Like Codex's retained <collaboration_mode> developer fragment, re-inject the
@@ -128,12 +131,9 @@ export default async function codexFlavor(pi) {
     // truncation instead of a head-only slice that hides late errors.
     return { content: event.content.map(c => c.type === 'text' && byteLength(c.text) > config.outputBytes ? { ...c, text: truncateText(c.text, { unit: 'bytes', value: config.outputBytes }) } : c) };
   });
-  pi.on('user_bash', async (event, ctx) => {
-    try {
-      const response = await requireRuntime().executor.capture([config.shell, '--noprofile', '--norc', '-c', event.command], { owner: 'root', signal: ctx.signal, description: event.command });
-      return { result: { output: response.output, exitCode: response.exit_code ?? undefined, cancelled: response.cancelled, truncated: response.dropped_bytes > 0 } };
-    } catch (error) { return { result: { output: error.message, exitCode: 1, cancelled: false, truncated: false } }; }
-  });
+  // Operations instead of a finished result: Pi then streams the output, keeps its full log,
+  // and cancels on Escape, while execution still goes through this suite's policy and sandbox.
+  pi.on('user_bash', () => ({ operations: { exec: (command, cwd, { onData, signal }) => requireRuntime().executor.stream(command, { owner: 'root', cwd, signal, onData }) } }));
   pi.on('session_shutdown', async () => { await runtime?.close(); });
   const permissionsCommand = {
     description: 'Set permissions: Ask for Approval, Full Access or Read-Only',

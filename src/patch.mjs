@@ -1,5 +1,13 @@
+// Codex accepts exactly these whole-command forms, so a patch sent through the shell lands
+// on the same tracked path instead of failing for want of an apply_patch binary.
+const SHELL_PATCH = /^\s*(?:cd\s+('[^']*'|"[^"]*"|[^\s;&|<>'"]+)\s*&&\s*)?(?:apply_patch|applypatch)\s*<<\s*(['"]?)(\w+)\2[ \t]*\n([\s\S]*?)\n\3[ \t]*\n?\s*$/;
+export function shellPatch(command) {
+  const match = SHELL_PATCH.exec(command);
+  return match && { dir: match[1]?.replace(/^(['"])(.*)\1$/, '$2'), patch: match[4] };
+}
 export function parsePatch(patch) {
   const lines = patch.replace(/\r\n/g, '\n').trim().split('\n');
+  if (lines.length >= 4 && /^<<(['"]?)EOF\1$/.test(lines[0]) && lines.at(-1).endsWith('EOF')) { lines.shift(); lines.pop(); }
   if (lines.shift()?.trim() !== '*** Begin Patch' || lines.pop()?.trim() !== '*** End Patch') throw Error('Patch must have Begin Patch and End Patch markers');
   const operations = []; let index = 0;
   while (index < lines.length) {

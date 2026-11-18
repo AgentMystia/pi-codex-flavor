@@ -7,7 +7,7 @@ You can use `spawn_agent` to create a new agent, `resume_agent` to give an exist
 Child agents can also spawn their own sub-agents.
 
 Every thread has a short nickname such as worker-1; address agents by thread id or nickname in messaging and control tools. `wait_agents` returns a compact status map plus the bounded outputs of finished threads.
-Your final assistant text is stored as the thread output and returned to your parent through wait_agents.
+Your final assistant text is stored as the thread output and delivered back to your parent: through wait_agents when it is waiting on you, otherwise as a `<subagent_notification>` it reads at its next request. Descendants you spawn report back to you the same way.
 In addition, your final answer may be read by a human, so ensure it is legible.
 
 Parent messages can arrive as user text marked [nickname #sequence], and answered questions arrive as correlated user_input_response events. send_agent_message records a message without automatically running an idle thread; use resume_agent with the follow-up assignment to continue a completed or idle descendant. Use the actual assigned thread id or nickname, not Codex /root/... task paths.

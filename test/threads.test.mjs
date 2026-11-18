@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import { fixture, pause, callTool, lastText } from './helpers.mjs';
 import { Scheduler } from '../src/scheduler.mjs';
 import { deferred } from '../src/util.mjs';
@@ -103,6 +105,103 @@ test('async child questions can settle then resume the persistent thread on an e
   assert.equal(f.runtime.threads.view(child.id).status, 'waiting_input'); assert.equal(f.runtime.scheduler.active.size, 0);
   answer.resolve('chosen'); await f.runtime.dialogs.tail; await pause(20); await f.runtime.threads.live.get(child.id).run;
   assert.equal(f.runtime.threads.view(child.id).status, 'completed'); assert.equal(f.runtime.threads.view(child.id).output, 'resumed with answer');
+});
+test('a resumed child sees the answer to its async question and earlier messages sent while it was idle', async t => {
+  const answer = deferred(); let turns = 0, resumedContext = '', followUpContext = '';
+  const f = await fixture(t, { ui: { available: true, input: async () => answer.promise }, handler: async context => {
+    turns++;
+    if (turns === 1) return callTool('request_user_input_async', { questions: [{ title: 'Proceed with which name?' }] });
+    if (lastText(context).includes('Continue using')) { resumedContext = JSON.stringify(context.messages); return 'resumed'; }
+    if (lastText(context).includes('What was the word')) { followUpContext = JSON.stringify(context.messages); return 'pelican'; }
+    return 'independent work complete';
+  } });
+  const child = f.runtime.threads.spawn('root', { message: 'ask async' }); await f.runtime.threads.live.get(child.id).run;
+  answer.resolve('chosen-name'); await f.runtime.dialogs.tail; await pause(20); await f.runtime.threads.live.get(child.id).run;
+  assert.match(resumedContext, /chosen-name/, 'the answer reaches the live agent, not only the session file');
+  f.runtime.threads.send('root', child.id, 'the code word is pelican');
+  f.runtime.threads.resume('root', child.id, 'What was the word?'); await f.runtime.threads.live.get(child.id).run;
+  assert.match(followUpContext, /the code word is pelican/);
+  assert.equal(f.runtime.threads.view(child.id).output, 'pelican');
+});
+test('a finished child notifies its parent unless the parent is waiting on it or stopped it', async t => {
+  const notices = [];
+  const f = await fixture(t, { handler: async context => { if (lastText(context).includes('slow')) await pause(300); return `result for ${lastText(context)}`; } });
+  f.runtime.agentNotice = text => notices.push(text);
+  const loose = f.runtime.threads.spawn('root', { message: 'loose job' }); await f.runtime.threads.live.get(loose.id).run;
+  assert.equal(notices.length, 1);
+  assert.match(notices[0], /^<subagent_notification>\n\{"id":"agent_\w+","nickname":"worker-1","status":"completed"\}\nresult for loose job\n<\/subagent_notification>$/);
+  const awaited = f.runtime.threads.spawn('root', { message: 'awaited job' });
+  assert.equal((await f.runtime.threads.wait('root', [awaited.id])).outputs[awaited.id], 'result for awaited job');
+  const stopped = f.runtime.threads.spawn('root', { message: 'slow job' }); await pause(20);
+  await f.runtime.threads.interrupt('root', stopped.id);
+  assert.equal(notices.length, 1, 'neither a waited-on nor an interrupted thread adds a notification');
+  const nested = await fixture(t, { handler: async context => {
+    if (lastText(context).includes('inner task')) return 'inner done';
+    return context.messages.some(message => message.role === 'toolResult') ? 'outer saw the notification' : callTool('spawn_agent', { message: 'inner task' });
+  } });
+  const outer = nested.runtime.threads.spawn('root', { message: 'outer task' }); await nested.runtime.threads.live.get(outer.id).run;
+  const inner = Object.values(nested.runtime.state.data.threads).find(thread => thread.parent === outer.id);
+  await nested.runtime.threads.live.get(inner.id).run;
+  const history = JSON.stringify(nested.runtime.threads.live.get(outer.id).sessionManager.buildSessionContext().messages);
+  assert.match(history, /subagent_notification[^]*inner done/, 'a child thread parent gets the notification in its own history');
+});
+test('wait ends early on new input and splits its output budget across finished threads', async t => {
+  const f = await fixture(t, { config: { outputBytes: 24000 }, handler: async context => {
+    if (lastText(context).includes('slow')) { await pause(2000); return 'late'; }
+    return `${'x'.repeat(30000)}TAIL-${lastText(context)}`;
+  } });
+  const slow = f.runtime.threads.spawn('root', { message: 'slow' });
+  const started = Date.now();
+  const steered = await f.runtime.threads.wait('root', [slow.id], { timeoutMs: 10000, hasInput: () => true });
+  assert.ok(Date.now() - started < 1500);
+  assert.deepEqual({ timed_out: steered.timed_out, interrupted_by_input: steered.interrupted_by_input }, { timed_out: false, interrupted_by_input: true });
+  const jobs = ['a', 'b', 'c'].map(name => f.runtime.threads.spawn('root', { message: name }));
+  const waited = await f.runtime.threads.wait('root', jobs.map(job => job.id));
+  for (const [index, job] of jobs.entries()) {
+    const output = waited.outputs[job.id];
+    assert.ok(Buffer.byteLength(output) < 7300, 'each output gets a third of the budget');
+    assert.ok(output.endsWith(`TAIL-${['a', 'b', 'c'][index]}`), 'the tail of every output survives');
+  }
+});
+test('a long child thread compacts itself before reaching the context window and keeps working', async t => {
+  const summaries = []; let reads = 0;
+  const f = await fixture(t, { handler: async context => {
+    const text = JSON.stringify(context);
+    if (text.includes('context summarization assistant')) { summaries.push(text); return 'SUMMARY-OF-EARLIER-WORK'; }
+    const usage = { input: Math.ceil(Buffer.byteLength(text) / 4), output: 10, cacheRead: 0, cacheWrite: 0, totalTokens: Math.ceil(Buffer.byteLength(text) / 4) + 10, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
+    if (reads < 4) return { content: callTool('read', { path: 'big.txt' }, `read_${++reads}`), extra: { usage } };
+    return { content: [{ type: 'text', text: 'finished after compaction' }], extra: { usage } };
+  } });
+  await writeFile(path.join(f.root, 'big.txt'), 'line of data\n'.repeat(700));
+  f.context.model = { ...f.context.model, contextWindow: 8000 };
+  const child = f.runtime.threads.spawn('root', { message: 'read the file four times' }); await f.runtime.threads.live.get(child.id).run;
+  const item = f.runtime.threads.view(child.id);
+  assert.equal(item.status, 'completed'); assert.equal(item.output, 'finished after compaction');
+  assert.ok(summaries.length >= 1 && item.compactions >= 1);
+  assert.match(summaries[0], /read the file four times/, 'the assignment is part of the summary request');
+  const session = f.runtime.threads.live.get(child.id).sessionManager;
+  assert.ok(session.getBranch().some(entry => entry.type === 'compaction'));
+  const context = session.buildSessionContext().messages;
+  assert.equal(context[0].role, 'compactionSummary');
+  assert.ok(context.some(message => message.role === 'toolResult'), 'the most recent work stays verbatim');
+});
+test('a child thread recovers from a context overflow by compacting once', async t => {
+  let calls = 0, overflowed = false;
+  const f = await fixture(t, { handler: async context => {
+    const text = JSON.stringify(context);
+    if (text.includes('context summarization assistant')) return 'SUMMARY';
+    calls++;
+    if (calls <= 3) return callTool('read', { path: 'big.txt' }, `read_${calls}`);
+    if (!overflowed) { overflowed = true; throw Error('prompt is too long: 9000 tokens > 8000 maximum'); }
+    return 'recovered';
+  } });
+  await writeFile(path.join(f.root, 'big.txt'), 'line of data\n'.repeat(700));
+  f.context.model = { ...f.context.model, contextWindow: 8000 };
+  const child = f.runtime.threads.spawn('root', { message: 'work' }); await f.runtime.threads.live.get(child.id).run;
+  const item = f.runtime.threads.view(child.id);
+  assert.equal(item.status, 'completed'); assert.equal(item.output, 'recovered'); assert.equal(item.compactions, 1);
+  const history = f.runtime.threads.live.get(child.id).sessionManager.buildSessionContext().messages;
+  assert.equal(history.filter(message => message.stopReason === 'error').length, 0, 'the overflowed attempt stays out of history');
 });
 test('messages keep order; closed threads invalidate pending input and reject late execution', async t => {
   const f = await fixture(t, { handler: async () => { await pause(20); return 'done'; } });
