@@ -258,6 +258,20 @@ test('a child finishing after the main session went idle is recorded without sta
   const notice = f.sessionManager.getBranch().find(entry => entry.customType === 'pi-codex-agent-notification');
   assert.match(notice?.content ?? '', /late findings/);
 });
+test('a user shell command streams through the policy executor and cancels with Pi own signal instead of a timeout', async t => {
+  const f = await sessionFixture(t, () => 'done');
+  const handled = await f.session.extensionRunner.emitUserBash({ type: 'user_bash', command: 'echo hi', excludeFromContext: false, cwd: f.root });
+  assert.ok(handled.operations && !handled.result, 'Pi keeps streaming, logging and Escape handling');
+  const chunks = [];
+  assert.deepEqual(await handled.operations.exec('echo streamed; exit 3', f.root, { onData: data => chunks.push(data.toString()) }), { exitCode: 3 });
+  assert.equal(chunks.join(''), 'streamed\n');
+  const controller = new AbortController();
+  const started = Date.now();
+  setTimeout(() => controller.abort(), 200);
+  const stopped = await handled.operations.exec('sleep 30', f.root, { onData: () => {}, signal: controller.signal });
+  assert.ok(Date.now() - started < 3000);
+  assert.equal(stopped.exitCode, 137, 'a killed command reports 128 + SIGKILL');
+});
 test('fork excludes unfinished local tool batches and retains completed native history', () => {
   const native = { role: 'assistant', content: [{ type: 'text', text: 'native' }], opaqueNative: { opaque: true } };
   const messages = [native, { role: 'assistant', content: [{ type: 'toolCall', id: 'pending', name: 'spawn_agent' }] }];

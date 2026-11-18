@@ -131,12 +131,9 @@ export default async function codexFlavor(pi) {
     // truncation instead of a head-only slice that hides late errors.
     return { content: event.content.map(c => c.type === 'text' && byteLength(c.text) > config.outputBytes ? { ...c, text: truncateText(c.text, { unit: 'bytes', value: config.outputBytes }) } : c) };
   });
-  pi.on('user_bash', async (event, ctx) => {
-    try {
-      const response = await requireRuntime().executor.capture([config.shell, '--noprofile', '--norc', '-c', event.command], { owner: 'root', signal: ctx.signal, description: event.command });
-      return { result: { output: response.output, exitCode: response.exit_code ?? undefined, cancelled: response.cancelled, truncated: response.dropped_bytes > 0 } };
-    } catch (error) { return { result: { output: error.message, exitCode: 1, cancelled: false, truncated: false } }; }
-  });
+  // Operations instead of a finished result: Pi then streams the output, keeps its full log,
+  // and cancels on Escape, while execution still goes through this suite's policy and sandbox.
+  pi.on('user_bash', () => ({ operations: { exec: (command, cwd, { onData, signal }) => requireRuntime().executor.stream(command, { owner: 'root', cwd, signal, onData }) } }));
   pi.on('session_shutdown', async () => { await runtime?.close(); });
   const permissionsCommand = {
     description: 'Set permissions: Ask for Approval, Full Access or Read-Only',
