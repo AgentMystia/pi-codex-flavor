@@ -1,0 +1,67 @@
+{
+  "name": "pi-codex-flavor",
+  "version": "0.3.1",
+  "description": "Independent Codex-inspired programming tools and interaction for Pi",
+  "type": "module",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AgentMystia/pi-codex-flavor.git"
+  },
+  "homepage": "https://github.com/AgentMystia/pi-codex-flavor#readme",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "exports": {
+    ".": "./index.mjs",
+    "./core": "./src/runtime.mjs"
+  },
+  "pi": {
+    "extensions": [
+      "./index.mjs"
+    ],
+    "prompts": [
+      "./workflows"
+    ],
+    "themes": [
+      "./themes"
+    ]
+  },
+  "files": [
+    "index.mjs",
+    "src",
+    "workflows",
+    "themes",
+    "third_party/codex/LICENSE",
+    "third_party/codex/NOTICE",
+    "third_party/codex/SOURCE.json",
+    "third_party/codex-current/LICENSE",
+    "third_party/codex-current/NOTICE",
+    "third_party/codex-current/SOURCE.json",
+    "third_party/PI-MIT-LICENSE",
+    "LICENSE",
+    "NOTICE",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "check": "tsc --noEmit",
+    "verify:sources": "node scripts/verify-sources.mjs",
+    "test:profile": "node scripts/profile.mjs",
+    "test:arch": "node scripts/arch-acceptance.mjs",
+    "release": "node scripts/release.mjs"
+  },
+  "dependencies": {
+    "diff": "8.0.4"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "1.5.2",
+    "@earendil-works/pi-agent-core": "1.5.2",
+    "@earendil-works/pi-tui": "1.5.2",
+    "typebox": "1.3.27"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.1",
+    "typescript": "5.9.3"
+  }
+}

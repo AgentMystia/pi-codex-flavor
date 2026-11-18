@@ -1,0 +1,109 @@
+{
+  "repository": "https://github.com/openai/codex",
+  "commit": "c0cc9fc820f62e4dbdde68214dd6d792d6c8a7ee",
+  "date": "2026-11-12T05:21:30Z",
+  "model": "gpt-6.1-sol",
+  "extraction": "Model-specific public instructions and terminal output implementation from the pinned Codex source. No private session instructions are used.",
+  "files": [
+    {
+      "path": "codex-rs/models-manager/models.json",
+      "local": "models.json",
+      "sha256": "1384625c0b6b3e67d3c60da29becea2b017f2c283fc1e2d05b8edafb4698eb10"
+    },
+    {
+      "path": "codex-rs/models-manager/models.json#models[slug=gpt-6.1-sol].model_messages.instructions_template",
+      "local": "base-instructions.md",
+      "sha256": "e1bdd4f8f0df4b20f4a0ffc8a861ce819df45325d8cecdfb92e80379cf8d142e"
+    },
+    {
+      "path": "codex-rs/models-manager/models.json#models[slug=gpt-6.1-sol].model_messages.multi_agent.role.root",
+      "local": "root-instructions.md",
+      "sha256": "4c86e7411c24afc557c906f31a267c991568311715cc81ba0129604c70b83755"
+    },
+    {
+      "path": "codex-rs/models-manager/models.json#models[slug=gpt-6.1-sol].model_messages.multi_agent.role.subagent",
+      "local": "subagent-instructions.md",
+      "sha256": "3651a6dee0715ee4990f23bfbc35a13c5da42e24f35a9eda2809614fd3b0a87b"
+    },
+    {
+      "path": "codex-rs/prompts/templates/review/rubric.md",
+      "local": "review-rubric.md",
+      "sha256": "ec60e7f36a1d1c2679ce095c0205ecc56f7dd8fb57707a13ef362072390f219f"
+    },
+    {
+      "path": "LICENSE",
+      "local": "LICENSE",
+      "sha256": "d17f227e4df5da1600391338865ce0f3055211760a36688f816941d58232d8dc"
+    },
+    {
+      "path": "NOTICE",
+      "local": "NOTICE",
+      "sha256": "9d71575ecfd9a843fc1677b0efb08053c6ba9fd686a0de1a6f5382fd3c220915"
+    },
+    {
+      "path": "codex-rs/core/src/tools/context.rs",
+      "local": "codex-rs__core__src__tools__context.rs",
+      "sha256": "47d3e2097256baca576871c106e5ef2539a08c6983fd412312577cee72b74036"
+    },
+    {
+      "path": "codex-rs/core/src/tools/context_tests.rs",
+      "local": "codex-rs__core__src__tools__context_tests.rs",
+      "sha256": "7bdf95ba114b18abfaae2aa7b78633b58324bc165db868744282663955c31ebe"
+    },
+    {
+      "path": "codex-rs/core/src/tools/handlers/unified_exec/exec_command.rs",
+      "local": "codex-rs__core__src__tools__handlers__unified_exec__exec_command.rs",
+      "sha256": "ee32477d7707300253ae33bf09e45680ef08b24ce576a6aac8be552a48cfd323"
+    },
+    {
+      "path": "codex-rs/core/src/tools/handlers/unified_exec/write_stdin.rs",
+      "local": "codex-rs__core__src__tools__handlers__unified_exec__write_stdin.rs",
+      "sha256": "30070411336b9b9eec7f04f4be0f58bed8f625be43682ea00269bb263afddf18"
+    },
+    {
+      "path": "codex-rs/core/src/unified_exec/output.rs",
+      "local": "codex-rs__core__src__unified_exec__output.rs",
+      "sha256": "aafbe024e403f16a967a96a382cf834dc0c658b97d12a3c56de0bea117ac1f65"
+    },
+    {
+      "path": "codex-rs/core/src/unified_exec/mod.rs",
+      "local": "codex-rs__core__src__unified_exec__mod.rs",
+      "sha256": "6f362c20430c1120b9933f78f2baaba643da6cc9177ba933a9de24f824390351"
+    },
+    {
+      "path": "codex-rs/core/src/unified_exec/process_manager.rs",
+      "local": "codex-rs__core__src__unified_exec__process_manager.rs",
+      "sha256": "3584f3030322011abed4faf780f633d115bf45aca73fe4501eeff992888d3628"
+    },
+    {
+      "path": "codex-rs/utils/head-tail-buffer/src/lib.rs",
+      "local": "codex-rs__utils__head-tail-buffer__src__lib.rs",
+      "sha256": "fbcb0afbba04a65db6756715c81eb0295d4a2be1b123252043783df16bc57a55"
+    },
+    {
+      "path": "codex-rs/utils/output-truncation/src/lib.rs",
+      "local": "codex-rs__utils__output-truncation__src__lib.rs",
+      "sha256": "b79d7270bb8ee0c85938cfa6fcf651bca5fa08104bb54cd137c1a1117608e3df"
+    },
+    {
+      "path": "codex-rs/utils/string/src/truncate.rs",
+      "local": "codex-rs__utils__string__src__truncate.rs",
+      "sha256": "40307eec11ed65d2bb85b9832d751c9516bd509d1fcd7b1ea83d1b1e25242a28"
+    },
+    {
+      "path": "codex-rs/collaboration-mode-templates/templates/plan.md",
+      "local": "collaboration-plan-template.md",
+      "sha256": "d6d46c2d460a9d91ada2167605a8dfc56efde6b2ab61e101444c736c6fd6960a"
+    },
+    {
+      "path": "codex-rs/collaboration-mode-templates/templates/default.md",
+      "local": "collaboration-default-template.md",
+      "sha256": "1042cc643eb0147ca1039b19287c7462ceb297502f7f310d9664ac323a12feca"
+    },
+    {
+      "path": "codex-rs/tui/src/exec_cell/render.rs",
+      "local": "codex-rs__tui__src__exec_cell__render.rs",
+      "sha256": "c37d5ff8a34d1175bb484460b7c5ebac1edf89ff2a46669e49fbe975cdba7913"
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+Pi Codex Flavor
+Copyright 2026 Pi Codex Flavor contributors
+
+This independent Pi extension includes adapted guidance and protocol designs
+from OpenAI Codex, pinned to rust-v0.114.0, commit
+b9904c0ae4ecb773549efd6ea3fb05229402fdb9, under Apache License 2.0.
+The Pi integration, scheduler, controlled process execution, question queue,
+tracked mutation layer, JSON-RPC LSP client and UI use JavaScript and Pi APIs.
+The core guidance is condensed and adapted to Pi's actual APIs. The patch parser
+uses Codex's documented marker grammar with stricter, unambiguous context matches.
+See third_party/codex/SOURCE.json for upstream paths and checksums.
+
+The core and delegated-agent instructions retain the current public Codex
+GPT-6.1-Sol model instructions, with Pi protocol adaptations. These and the
+current code-review rubric are pinned to Codex commit
+c0cc9fc820f62e4dbdde68214dd6d792d6c8a7ee (2026-11-12).
+No private session instructions are used. Original public source snapshots
+are kept in the development tree; provenance, Apache-2.0 license and the
+upstream NOTICE are retained in third_party/codex-current.
+
+Terminal response formatting (ExecCommandToolOutput), captured-stream
+head/tail buffering and output truncation are JavaScript ports of that same
+2026-11-12 Codex commit. The terminal card adapts its raw-output preview to Pi.
+Pi supplies the byte budget, stream callbacks and process control; cancellation
+and timeout diagnostics remain explicit. No Rust runtime is bundled.
+
+Original upstream NOTICE (also retained verbatim in third_party/codex/NOTICE):
+OpenAI Codex
+Copyright 2025 OpenAI
+
+This project includes code derived from Ratatui (https://github.com/ratatui/ratatui),
+licensed under the MIT license.
+Copyright (c) 2016-2022 Florian Dehau
+Copyright (c) 2023-2025 The Ratatui Developers
+
+Ratatui code is not used by this extension; its upstream notice is retained.
+The codex-flavor theme adapts Pi v1.5.2's dark theme. Pi copyright and its MIT
+license are retained in third_party/PI-MIT-LICENSE.
+Pi and its TUI are separately provided by @earendil-works under their own licenses.

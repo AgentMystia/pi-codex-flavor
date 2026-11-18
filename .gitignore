@@ -1,0 +1,6 @@
+node_modules/
+release/
+docs/frozen-*.json
+docs/validation-report.md
+test/companion-local.test.mjs
+scripts/verify-companion.mjs

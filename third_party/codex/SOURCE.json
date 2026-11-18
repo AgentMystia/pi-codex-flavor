@@ -1,0 +1,52 @@
+{
+  "repository": "https://github.com/openai/codex",
+  "tag": "rust-v0.114.0",
+  "commit": "b9904c0ae4ecb773549efd6ea3fb05229402fdb9",
+  "files": [
+    {
+      "path": "LICENSE",
+      "local": "LICENSE",
+      "sha256": "d17f227e4df5da1600391338865ce0f3055211760a36688f816941d58232d8dc"
+    },
+    {
+      "path": "NOTICE",
+      "local": "NOTICE",
+      "sha256": "f1472762614227ff6fb67e73fe42a9e5e80a0bcc7677158b1a7c3753a8a3a3e5"
+    },
+    {
+      "path": "codex-rs/core/prompt.md",
+      "local": "codex-rs__core__prompt.md",
+      "sha256": "0fae66723e9ba38083bd5a26f83f5c6c944954daaea3436084ab75eb8fdf46c8"
+    },
+    {
+      "path": "codex-rs/core/review_prompt.md",
+      "local": "codex-rs__core__review_prompt.md",
+      "sha256": "bc96ddff6a80d36620ea27cd3e864abffd875cc4ea65a55063b99da459ba4ae2"
+    },
+    {
+      "path": "codex-rs/core/templates/collab/experimental_prompt.md",
+      "local": "codex-rs__core__templates__collab__experimental_prompt.md",
+      "sha256": "14ef86be60bc612a10b44f8ae0de4ed67184ed5dd86ad75cfd4892f9e2ded432"
+    },
+    {
+      "path": "codex-rs/core/src/tools/handlers/request_user_input.rs",
+      "local": "codex-rs__core__src__tools__handlers__request_user_input.rs",
+      "sha256": "03b73b079856221e6c4e7016719ebc06a5fee4ec1bc43112b8c84e172dcff3e6"
+    },
+    {
+      "path": "codex-rs/protocol/src/request_user_input.rs",
+      "local": "codex-rs__protocol__src__request_user_input.rs",
+      "sha256": "f617bec633ca8ccc9df9f5b9c567cddb93a366ed51cc16f9948496d23eb492a6"
+    },
+    {
+      "path": "codex-rs/apply-patch/src/parser.rs",
+      "local": "codex-rs__apply-patch__src__parser.rs",
+      "sha256": "8bc5adbfa0b79a82433f261ee3acb347897e87b46e1c560f7ba67d5efac2b865"
+    },
+    {
+      "path": "codex-rs/core/src/tools/handlers/multi_agents.rs",
+      "local": "codex-rs__core__src__tools__handlers__multi_agents.rs",
+      "sha256": "368921eaaedfe781ed576fddcddf31c4caf1628dd61158ca72450001a3b74751"
+    }
+  ]
+}
