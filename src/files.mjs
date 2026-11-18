@@ -72,8 +72,9 @@ export class Files {
       return { value, ...outcome };
     }));
   }
-  async apply(patch, owner = 'root', signal) {
+  async apply(patch, owner = 'root', signal, base) {
     const operations = parsePatch(patch);
+    if (base) for (const operation of operations) for (const key of ['path', 'move']) if (operation[key]) operation[key] = path.relative(this.policy.root, path.resolve(this.policy.root, base, operation[key]));
     const paths = operations.flatMap(op => [op.path, ...(op.move ? [op.move] : [])]);
     await this.capture(paths, owner);
     const completed = [];

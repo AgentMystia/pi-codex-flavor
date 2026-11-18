@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile, writeFile, symlink, link, access } from 'node:fs/promises';
+import { readFile, writeFile, symlink, link, access, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { fixture, pause } from './helpers.mjs';
@@ -72,6 +72,20 @@ test('patch context accepts the common Codex patch variants and an anchor picks 
   assert.equal(updateContent(source, bare[0].chunks), source.replace('return 1', 'return 3'), 'the first hunk may omit @@, and loosely matched context keeps the file text');
   assert.throws(() => updateContent(source, [{ anchor: '', old: ['        return 1'], replacement: ['        return 2'], eof: false }]), /Ambiguous/);
   assert.throws(() => updateContent(source, [{ anchor: '', old: ['        return 9'], replacement: ['x'], eof: false }]), /does not match current contents near: " {8}return 9"/);
+});
+test('a patch sent through the shell in a Codex form is applied on the tracked path', async t => {
+  const f = await fixture(t); await mkdir(path.join(f.root, 'sub dir'));
+  const body = patch('*** Add File: x.txt\n+x');
+  let output = await f.call('exec_command', { cmd: `cd 'sub dir' && apply_patch <<'EOF'\n${body}\nEOF\n` });
+  assert.match(output.content[0].text, /^Applied as change_[0-9a-f]{12}\nA sub dir\/x\.txt \(\+1 -0\)$/);
+  output = await f.call('exec_command', { cmd: `applypatch <<EOF\n${patch('*** Update File: x.txt\n@@\n-x\n+y')}\nEOF`, workdir: 'sub dir' });
+  assert.equal(await readFile(path.join(f.root, 'sub dir/x.txt'), 'utf8'), 'y\n');
+  assert.equal(f.runtime.state.data.changes.length, 2);
+  await assert.rejects(f.call('exec_command', { cmd: `cd .. && apply_patch <<'EOF'\n${patch('*** Add File: out.txt\n+x')}\nEOF` }), /outside/);
+  output = await f.call('exec_command', { cmd: `echo hi && apply_patch <<'EOF'\n${body}\nEOF` });
+  assert.match(output.content[0].text, /\nhi\n.*apply_patch: command not found/, 'any other command still runs in the shell');
+  output = await f.call('apply_patch', { patch: `<<'EOF'\n${patch('*** Add File: wrapped.txt\n+w')}\nEOF` });
+  assert.match(output.content[0].text, /A wrapped\.txt/, 'a heredoc wrapper around the patch argument is dropped');
 });
 test('apply_patch answers with the change id and line counts; restore reads the content store', async t => {
   const f = await fixture(t); await writeFile(path.join(f.root, 'a.txt'), 'one\ntwo\n');
