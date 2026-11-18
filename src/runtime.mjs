@@ -7,14 +7,14 @@ import { State } from './state.mjs';
 import { Scheduler } from './scheduler.mjs';
 import { QuestionQueue } from './questions.mjs';
 import { Policy } from './policy.mjs';
-import { Executor } from './executor.mjs';
+import { Executor, MAX_POLL_MS } from './executor.mjs';
 import { execResult, truncateMiddle, clip } from './exec-output.mjs';
 import { Files } from './files.mjs';
 import { Threads } from './threads.mjs';
 import { Lsp } from './lsp.mjs';
 import { Approvals } from './approvals.mjs';
 import { readSubagentConfig, subagentsPath } from './subagents.mjs';
-import { SerialQueue, result, compact, bounded, clone, id, checkAbort } from './util.mjs';
+import { SerialQueue, result, compact, clone, id, checkAbort } from './util.mjs';
 import { permissionPreset } from './permissions.mjs';
 import { REVIEW_PROMPT } from './prompt.mjs';
 const S = () => Type.String();
@@ -27,6 +27,8 @@ const questionsSchema = Type.Array(Type.Union([
 ]), { minItems: 1, maxItems: 3 });
 const make = (name, description, properties, fn, format = result) => ({ name, label: name.replaceAll('_', ' '), description, parameters: Type.Object(properties), execute: async (_id, params, signal, update, ctx) => format(await fn(params, signal, update, ctx), params) });
 const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
+// Codex multi_agents_common: waits run 10 s to 1 h, so a parent cannot spin on short polls.
+const WAIT_MIN_MS = 10000, WAIT_MAX_MS = 3600000;
 const changeLines = files => files.map(file => `${file.kind} ${file.path}${file.added || file.removed ? ` (+${file.added} -${file.removed})` : ''}`);
 // The model gets the outcome and per-file line counts. The diff repeats what it just wrote,
 // so that stays in details, where the tool card shows it.
@@ -69,7 +71,7 @@ export class Runtime {
     } });
     this.threads = new Threads({ ...shared, questions: this.questions, executor: this.executor,
       getContext: owner => owner === 'root' ? getContext() : this.threads.context(owner), tools: (owner, context) => this.tools(owner, context),
-      resolveSubagent: context => this.resolveSubagent(context), onChange });
+      resolveSubagent: context => this.resolveSubagent(context), notify: text => this.agentNotice?.(text), onChange });
     this.lsp = config.lsp.length ? new Lsp({ ...shared, policy: this.policy, executor: this.executor, files: this.files }) : undefined;
   }
   async reloadSubagentGlobal() {
@@ -106,6 +108,12 @@ export class Runtime {
     if (!preset) throw Error('请选择 Ask for Approval、Full Access 或 Read-Only。');
     this.assertPermissionChangeIdle();
     this.state.data.permissionPreset = preset.id; this.state.save(); return preset;
+  }
+  // Whether the owner has input waiting: user steering for the main session, a queued
+  // parent message for a delegated thread.
+  hasInput(owner, ctx) {
+    if (owner === 'root') { const context = ctx ?? this.getContext?.(); return () => !!context?.hasPendingMessages?.(); }
+    return () => !!this.threads.live.get(owner)?.agent?.hasQueuedMessages?.();
   }
   // `hinted` is the tool's own readOnlyHint annotation. It is a declaration by the tool's
   // server, not something this suite can verify.
@@ -216,7 +224,10 @@ export class Runtime {
           : compact(value, Object.values(value).map(task => `${task.id} ${task.status ?? 'pending'} ${task.title ?? ''}${task.note ? ` (${task.note})` : ''}`).join('\n') || 'No tasks')),
       make('exec_command', 'Execute through the user-selected permission policy. Host access under restricted presets requires require_escalated with a justification and separate approval; Read-Only forbids escalation. Waits up to yield_time_ms (default 10000) for the command to finish; a longer command keeps running and returns a session ID for write_stdin. Native PTY is not enabled.', { cmd: S(), workdir: optional(S()), yield_time_ms: optional(number()), timeout_ms: optional(number(86400000)), max_output_tokens: optional(number(1000000)), require_approval: optional(Type.Boolean()), sandbox_permissions: optional(Type.Union(['use_default', 'require_escalated'].map(Type.Literal))), justification: optional(S()) },
         (p, signal, update) => this.executor.exec({ ...p, yield_time_ms: clamp(p.yield_time_ms ?? 10000, 250, 30000) }, owner, signal, update), (value, p) => execResult(value, this.config.outputBytes, p.max_output_tokens)),
-      make('write_stdin', 'Write stdin, send EOF or cancel a process owned by this agent, then return its new output. With nothing to send it waits at least 5 seconds for output.', { session_id: Type.Integer({ minimum: 1000, maximum: 99999 }), chars: optional(S()), yield_time_ms: optional(number()), max_output_tokens: optional(number(1000000)), eof: optional(Type.Boolean()), cancel: optional(Type.Boolean()) }, p => this.executor.write({ ...p, yield_time_ms: p.chars || p.eof || p.cancel ? clamp(p.yield_time_ms ?? 250, 250, 30000) : clamp(p.yield_time_ms ?? 5000, 5000, 30000) }, owner), (value, p) => execResult(value, this.config.outputBytes, p.max_output_tokens, 'write_stdin')),
+      make('write_stdin', 'Write stdin, send EOF or cancel a process owned by this agent, then return its new output. Input waits up to 30 s (default 250 ms). With nothing to send it waits 5 s to 300 s (default 5 s) unless the process ends or the user sends a message first; for a long job, wait long once instead of polling often.', { session_id: Type.Integer({ minimum: 1000, maximum: 99999 }), chars: optional(S()), yield_time_ms: optional(number(MAX_POLL_MS)), max_output_tokens: optional(number(1000000)), eof: optional(Type.Boolean()), cancel: optional(Type.Boolean()) }, (p, _signal, _update, ctx) => {
+        const empty = !(p.chars || p.eof || p.cancel);
+        return this.executor.write({ ...p, yield_time_ms: empty ? clamp(p.yield_time_ms ?? 5000, 5000, MAX_POLL_MS) : clamp(p.yield_time_ms ?? 250, 250, 30000) }, owner, empty ? this.hasInput(owner, ctx) : undefined);
+      }, (value, p) => execResult(value, this.config.outputBytes, p.max_output_tokens, 'write_stdin')),
       make('apply_patch', 'Apply Codex-format add, update, delete and move operations through the shared tracked mutation queue. Returns the change id and per-file line counts; a partial failure lists what completed.', { patch: S() }, (p, signal) => this.files.apply(p.patch, owner, signal), patchResult),
       make('restore_changes', 'Restore explicitly selected tracked files only if their current content still matches the recorded result. Shell side effects cannot be restored.', { change_id: S(), paths: Type.Array(S(), { minItems: 1 }) }, (p, signal) => this.files.restore(p.change_id, p.paths, owner, signal),
         value => compact(value, [value.change_id ? `Restored as ${value.change_id}` : 'Nothing to restore; the files already had the earlier content', ...changeLines(value.files)].join('\n'))),
@@ -232,7 +243,8 @@ export class Runtime {
         if (p.id === 'root' && owner !== 'root') { this.parentMessage?.(owner, p.message); return { delivered: true }; }
         return this.threads.send(owner, p.id, p.message, p);
       }, value => compact(value, { delivered: true, ...(value.sequence ? { sequence: value.sequence } : {}) })),
-      make('wait_agents', 'Wait for agent threads, releasing execution capacity. Returns a compact status map plus bounded outputs of finished threads. Wait cycles are rejected; use a substantial timeout.', { ids: Type.Array(S(), { minItems: 1 }), timeout_ms: optional(number(60000)) }, (p, signal) => this.threads.wait(owner, p.ids, { signal, timeoutMs: p.timeout_ms })),
+      make('wait_agents', 'Wait until all listed threads finish, releasing execution capacity. Returns early when new input for you arrives (interrupted_by_input) or at timeout_ms (10 s to 1 h, default 30 s). Returns a compact status map plus bounded outputs of finished threads. A thread that finishes while you are not waiting on it sends you a <subagent_notification> with its outcome, so keep working instead of polling. Wait cycles are rejected.', { ids: Type.Array(S(), { minItems: 1 }), timeout_ms: optional(number(WAIT_MAX_MS)) },
+        (p, signal, _update, ctx) => this.threads.wait(owner, p.ids, { signal, timeoutMs: clamp(p.timeout_ms ?? 30000, WAIT_MIN_MS, WAIT_MAX_MS), hasInput: this.hasInput(owner, ctx) })),
       make('list_agents', 'Inspect persistent thread states and shared execution capacity without waking agents.', {}, () => ({ threads: Object.values(this.state.data.threads).map(({ id, nickname, role, status, depth, parent, modelSource }) => ({ id, ...(nickname ? { nickname } : {}), role, status, depth, parent, ...(modelSource ? { modelSource } : {}) })), scheduler: this.scheduler.snapshot() })),
       make('interrupt_agent', 'Interrupt a descendant by thread id or nickname and clean up its running processes and pending questions.', { id: S() }, p => this.threads.interrupt(owner, p.id), value => compact(value, threadBrief(value))),
       make('close_agent', 'Close a descendant and its descendants by thread id or nickname, invalidate pending questions and release resources.', { id: S() }, p => this.threads.interrupt(owner, p.id, true), value => compact(value, threadBrief(value))),
@@ -255,7 +267,8 @@ export class Runtime {
       this.pendingTools++;
       try {
         const output = await tool.execute(...args);
-        return output.details?.execution ? output : { ...output, content: output.content.map(block => block.type === 'text' ? { ...block, text: bounded(block.text, this.config.outputBytes) } : block) };
+        // Codex truncates function output in the middle; trailing notes and late errors survive.
+        return output.details?.execution ? output : { ...output, content: output.content.map(block => block.type === 'text' ? { ...block, text: clip(block.text, this.config.outputBytes) } : block) };
       } catch (error) {
         // Like Codex's EXEC_COMMAND_REJECTION_MAX_BYTES + truncate_middle_chars,
         // bound rejection text so a failing tool cannot flood model context.

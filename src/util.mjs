@@ -19,6 +19,17 @@ export function bounded(text, limit = 24000) {
 export function result(value) { return { content: [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value) }], details: typeof value === 'object' ? value : {} }; }
 // The model gets `shown`; the full value stays in details for the UI and the session record.
 export function compact(value, shown) { return { content: [{ type: 'text', text: typeof shown === 'string' ? shown : JSON.stringify(shown) }], details: value && typeof value === 'object' ? value : {} }; }
+// Pi delivers a message typed during a tool call only after the call returns, so long waits
+// watch for one and end early instead of holding the user's steering back.
+export function whenInput(check, signal, intervalMs = 250) {
+  let timer;
+  const promise = new Promise(resolve => {
+    if (!check) return;
+    const poll = () => { if (signal?.aborted) return; if (check()) resolve(true); else timer = setTimeout(poll, intervalMs); };
+    timer = setTimeout(poll, intervalMs);
+  });
+  return { promise, stop: () => clearTimeout(timer) };
+}
 export class SerialQueue {
   tail = Promise.resolve();
   run(fn) { const next = this.tail.then(fn); this.tail = next.catch(() => {}); return next; }

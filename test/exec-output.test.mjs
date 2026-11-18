@@ -62,6 +62,18 @@ test('running commands expose a resumable session; completed commands hide it', 
   assert.doesNotMatch(text(completed), /session ID|process_|first|cancelled|timed_out/);
 });
 
+test('an empty write_stdin poll may wait for minutes but returns as soon as the user sends input', async t => {
+  const f = await fixture(t);
+  const running = await f.call('exec_command', { cmd: 'sleep 30', yield_time_ms: 250 });
+  const session = Number(text(running).match(/session ID (\d+)/)[1]);
+  const poll = f.runtime.tools().find(tool => tool.name === 'write_stdin');
+  const started = Date.now();
+  const steered = await poll.execute('poll', { session_id: session, yield_time_ms: 300000 }, undefined, undefined, { ...f.context, hasPendingMessages: () => true });
+  assert.ok(Date.now() - started < 3000, 'pending user input ends the wait');
+  assert.match(text(steered), /^Running \(\d+\.\ds\), session ID \d+$/);
+  const ended = await poll.execute('stop', { session_id: session, cancel: true }, undefined, undefined, f.context);
+  assert.match(text(ended), /Command cancelled/);
+});
 test('terminal failures remain clear without a JSON wrapper or false success', async t => {
   const f = await fixture(t);
   const failure = await f.call('exec_command', { cmd: 'echo failed >&2; exit 7', yield_time_ms: 1000 });

@@ -4,10 +4,12 @@ import { constants } from 'node:fs';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomBytes, randomInt } from 'node:crypto';
-import { deferred, checkAbort } from './util.mjs';
+import { deferred, checkAbort, whenInput } from './util.mjs';
 import { HeadTailBuffer } from './exec-output.mjs';
 import { socketFilter } from './seccomp.mjs';
-const clampWait = ms => Math.max(0, Math.min(ms ?? 1000, 30000));
+// Codex caps an empty write_stdin poll at its background terminal timeout, 300 s by default.
+export const MAX_POLL_MS = 300000;
+const clampWait = ms => Math.max(0, Math.min(ms ?? 1000, MAX_POLL_MS));
 async function executable(name) {
   const candidates = name.includes('/') ? [name] : (process.env.PATH ?? '/usr/bin:/bin').split(path.delimiter).map(dir => path.join(dir, name));
   for (const candidate of candidates) if (await access(candidate, constants.X_OK).then(() => true, () => false)) return realpath(candidate);
@@ -115,24 +117,25 @@ export class Executor {
     const job = this.jobs.get(processId);
     if (!job || job.owner !== owner) throw Error('Unknown process or different process owner'); return job;
   }
-  async poll(processId, owner = 'root', waitMs, started = performance.now()) {
+  async poll(processId, owner = 'root', waitMs, started = performance.now(), hasInput) {
     const job = this.get(processId, owner);
     let timer;
-    if (!job.done) await Promise.race([job.promise, new Promise(resolve => { timer = setTimeout(resolve, clampWait(waitMs)); })]);
-    clearTimeout(timer);
+    const input = whenInput(hasInput);
+    if (!job.done) await Promise.race([job.promise, input.promise, new Promise(resolve => { timer = setTimeout(resolve, clampWait(waitMs)); })]);
+    clearTimeout(timer); input.stop();
     const output = job.buffer.text();
     const response = { chunk_id: randomBytes(3).toString('hex'), wall_time_seconds: (performance.now() - started) / 1000,
       original_token_count: Math.ceil(job.buffer.totalBytes / 4), process_id: job.id, running: !job.done, output, exit_code: job.exitCode, signal: job.signal, cancelled: job.cancelled ?? false, timed_out: job.timedOut ?? false, error: job.error, dropped_bytes: job.buffer.omittedBytes, isolated: job.isolated };
     job.buffer.clear(); job.consumed = job.done;
     return response;
   }
-  async write(params, owner) {
+  async write(params, owner, hasInput) {
     const started = performance.now();
     const job = this.get(params.session_id ?? params.process_id, owner);
     if (params.cancel) { job.cancelled = true; this.kill(job); }
     if (params.chars && !job.done) await new Promise((resolve, reject) => job.child.stdin.write(params.chars, error => error ? reject(error) : resolve()));
     if (params.eof) job.child.stdin.end();
-    return this.poll(job.id, owner, params.yield_time_ms, started);
+    return this.poll(job.id, owner, params.yield_time_ms, started, hasInput);
   }
   async capture(argv, options = {}) {
     const job = await this.launch(argv, { ...options, timeoutMs: options.timeoutMs ?? 30000 });
