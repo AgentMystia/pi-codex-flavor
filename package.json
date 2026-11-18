@@ -1,6 +1,6 @@
 {
   "name": "pi-codex-flavor",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "Independent Codex-inspired programming tools and interaction for Pi",
   "type": "module",
   "license": "Apache-2.0",
