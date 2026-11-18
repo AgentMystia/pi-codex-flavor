@@ -83,7 +83,8 @@ test('a patch sent through the shell in a Codex form is applied on the tracked p
   assert.equal(f.runtime.state.data.changes.length, 2);
   await assert.rejects(f.call('exec_command', { cmd: `cd .. && apply_patch <<'EOF'\n${patch('*** Add File: out.txt\n+x')}\nEOF` }), /outside/);
   output = await f.call('exec_command', { cmd: `echo hi && apply_patch <<'EOF'\n${body}\nEOF` });
-  assert.match(output.content[0].text, /\nhi\n.*apply_patch: command not found/, 'any other command still runs in the shell');
+  assert.match(output.content[0].text, /^Exit code 127/m, 'any other command still runs in the shell');
+  assert.match(output.content[0].text, /\nhi\n.*apply_patch:/, 'the unmatched form reaches the real shell, whatever its error language');
   output = await f.call('apply_patch', { patch: `<<'EOF'\n${patch('*** Add File: wrapped.txt\n+w')}\nEOF` });
   assert.match(output.content[0].text, /A wrapped\.txt/, 'a heredoc wrapper around the patch argument is dropped');
 });
